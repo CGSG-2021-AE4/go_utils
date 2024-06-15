@@ -61,7 +61,7 @@ func (c *ConnWrapper) Read() (msgType byte, msg []byte, err error) {
 
 func (c *ConnWrapper) Write(msgType byte, msg []byte) error {
 	buf := make([]byte, 5)
-	binary.LittleEndian.PutUint32(buf, uint32(len(msg)))
+	binary.BigEndian.PutUint32(buf, uint32(len(msg)+5))
 	buf[4] = msgType
 	buf = append(buf, msg...) // May be it's too expensive?
 	l, err := c.Conn.Write(buf)
