@@ -2,8 +2,11 @@ package conn_wrapper
 
 import (
 	"encoding/binary"
+	"fmt"
 	"net"
 )
+
+// Errors
 
 type cwError struct {
 	err string
@@ -23,48 +26,71 @@ const (
 	MsgTypeClose        = iota
 )
 
-type ConnWrapper struct {
-	Conn net.Conn
-}
-
-func NewConn(c net.Conn) *ConnWrapper {
-	return &ConnWrapper{
-		Conn: c,
+func FormatError(err byte) string {
+	switch err {
+	case MsgTypeUndefined:
+		return "Undefined"
+	case MsgTypeError:
+		return "Error"
+	case MsgTypeOk:
+		return "Ok"
+	case MsgTypeRegistration:
+		return "Registration"
+	case MsgTypeRequest:
+		return "Request"
+	case MsgTypeResponse:
+		return "Response"
+	case MsgTypeClose:
+		return "Close"
+	default:
+		return "Invalid msg type"
 	}
 }
 
-func (c *ConnWrapper) Read() (msgType byte, msg []byte, err error) {
+// Wrapper itself
+
+type Conn struct {
+	NetConn net.Conn
+}
+
+func New(c net.Conn) *Conn {
+	return &Conn{
+		NetConn: c,
+	}
+}
+
+func (c *Conn) Read() (msgType byte, msg []byte, err error) {
 	buf := make([]byte, 1024)
-	readLen, err := c.Conn.Read(buf)
+	readLen, err := c.NetConn.Read(buf)
 	if err != nil {
 		return MsgTypeUndefined, nil, err
 	}
+	msg = append(msg, buf[5:readLen]...)
 	if readLen < 5 {
-		return MsgTypeUndefined, nil, cwError{"Too short msg"}
+		return MsgTypeUndefined, msg, cwError{"Too short msg"}
 	}
 	msgLen := int(binary.BigEndian.Uint32(buf[0:4]))
 	msgType = buf[4]
-	msg = append(msg, buf[5:readLen]...)
 	for readLen < msgLen {
-		len, err := c.Conn.Read(buf)
+		len, err := c.NetConn.Read(buf)
 		if err != nil {
-			return MsgTypeUndefined, nil, err
+			return MsgTypeUndefined, msg, err
 		}
 		msg = append(msg, buf[0:readLen]...)
 		readLen += len
 	}
 	if readLen > msgLen {
-		return MsgTypeUndefined, nil, cwError{"Too long msg"}
+		return MsgTypeUndefined, nil, cwError{fmt.Sprintf("Too long msg %d %d", readLen, msgLen)}
 	}
 	return // All return values are already set
 }
 
-func (c *ConnWrapper) Write(msgType byte, msg []byte) error {
+func (c *Conn) Write(msgType byte, msg []byte) error {
 	buf := make([]byte, 5)
 	binary.BigEndian.PutUint32(buf, uint32(len(msg)+5))
 	buf[4] = msgType
 	buf = append(buf, msg...) // May be it's too expensive?
-	l, err := c.Conn.Write(buf)
+	l, err := c.NetConn.Write(buf)
 	if err != nil {
 		return err
 	}
